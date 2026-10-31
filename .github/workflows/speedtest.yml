@@ -1,0 +1,39 @@
+name: Speed test
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  speed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Speed test (Cloudflare)
+        run: |
+          out() { echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"; }
+          show() {
+            set -- $1
+            if [ "$1" = "200" ]; then
+              awk -v s="$2" 'BEGIN{printf "%.0f Mbit/s (%.1f MB/s)", s*8/1000000, s/1000000}'
+            else
+              echo "failed (HTTP $1)"
+            fi
+          }
+          out "## GitHub machine speed test"
+          echo "Where this machine is:"
+          curl -s https://ipinfo.io/json | grep -E '"(city|region|country|org)"' || true
+          out ""
+          for i in 1 2 3; do
+            r=$(curl -s -o /dev/null -w '%{http_code} %{speed_download}' "https://speed.cloudflare.com/__down?bytes=100000000")
+            out "- Download $i: $(show "$r")"
+          done
+          head -c 25000000 /dev/urandom > up.bin
+          for i in 1 2 3; do
+            r=$(curl -s -o /dev/null -w '%{http_code} %{speed_upload}' -X POST --data-binary @up.bin "https://speed.cloudflare.com/__up")
+            out "- Upload $i: $(show "$r")"
+          done
+      - name: Second opinion (speedtest.net)
+        continue-on-error: true
+        run: |
+          pip install speedtest-cli
+          speedtest-cli --simple | tee speed2.txt
+          { echo ""; echo "## Second opinion (speedtest.net)"; sed 's/^/- /' speed2.txt; } >> "$GITHUB_STEP_SUMMARY"
